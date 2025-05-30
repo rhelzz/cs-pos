@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $today = Carbon::today();
         
@@ -82,17 +82,32 @@ class DashboardController extends Controller
                 return $item;
             });
         
-        return response()->json([
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'date' => $today->toDateString(),
+                'daily_income' => $dailyIncome,
+                'daily_expenses' => $dailyExpenses,
+                'gross_profit' => $grossProfit,
+                'net_profit' => $netProfit,
+                'transaction_count' => $transactionCount,
+                'latest_transactions' => $latestTransactions,
+                'low_stock_products' => $lowStockProducts,
+                'best_selling_products' => $bestSellingProducts,
+                'busiest_hours' => $busiestHours
+            ]);
+        }
+        
+        return view('dashboard', [
             'date' => $today->toDateString(),
-            'daily_income' => $dailyIncome,
-            'daily_expenses' => $dailyExpenses,
-            'gross_profit' => $grossProfit,
-            'net_profit' => $netProfit,
-            'transaction_count' => $transactionCount,
-            'latest_transactions' => $latestTransactions,
-            'low_stock_products' => $lowStockProducts,
-            'best_selling_products' => $bestSellingProducts,
-            'busiest_hours' => $busiestHours
+            'dailyIncome' => $dailyIncome,
+            'dailyExpenses' => $dailyExpenses,
+            'grossProfit' => $grossProfit,
+            'netProfit' => $netProfit,
+            'transactionCount' => $transactionCount,
+            'latestTransactions' => $latestTransactions,
+            'lowStockProducts' => $lowStockProducts,
+            'bestSellingProducts' => $bestSellingProducts,
+            'busiestHours' => $busiestHours
         ]);
     }
 }

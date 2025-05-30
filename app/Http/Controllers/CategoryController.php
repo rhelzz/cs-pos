@@ -8,10 +8,15 @@ use Illuminate\Support\Facades\Validator;
 
 class CategoryController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $categories = Category::all();
-        return response()->json(['categories' => $categories]);
+        $categories = Category::withCount('products')->paginate(10);
+        
+        if ($request->expectsJson()) {
+            return response()->json(['categories' => $categories]);
+        }
+        
+        return view('categories.index', compact('categories'));
     }
 
     public function store(Request $request)
@@ -22,16 +27,29 @@ class CategoryController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            return back()->withErrors($validator)->withInput();
         }
 
         $category = Category::create($request->all());
-        return response()->json(['message' => 'Category created successfully', 'category' => $category], 201);
+        
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Category created successfully', 'category' => $category], 201);
+        }
+        
+        return redirect()->route('categories.index')->with('success', 'Kategori berhasil ditambahkan');
     }
 
-    public function show(Category $category)
+    public function show(Request $request, Category $category)
     {
-        return response()->json(['category' => $category]);
+        if ($request->expectsJson()) {
+            return response()->json(['category' => $category]);
+        }
+        
+        return view('categories.show', compact('category'));
     }
 
     public function update(Request $request, Category $category)
@@ -42,21 +60,39 @@ class CategoryController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            return back()->withErrors($validator)->withInput();
         }
 
         $category->update($request->all());
-        return response()->json(['message' => 'Category updated successfully', 'category' => $category]);
+        
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Category updated successfully', 'category' => $category]);
+        }
+        
+        return redirect()->route('categories.index')->with('success', 'Kategori berhasil diperbarui');
     }
 
-    public function destroy(Category $category)
+    public function destroy(Request $request, Category $category)
     {
         // Check if there are products associated with this category
         if ($category->products()->count() > 0) {
-            return response()->json(['message' => 'Cannot delete category with associated products'], 400);
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Cannot delete category with associated products'], 400);
+            }
+            
+            return back()->with('error', 'Tidak dapat menghapus kategori yang memiliki produk terkait');
         }
 
         $category->delete();
-        return response()->json(['message' => 'Category deleted successfully']);
+        
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Category deleted successfully']);
+        }
+        
+        return redirect()->route('categories.index')->with('success', 'Kategori berhasil dihapus');
     }
 }

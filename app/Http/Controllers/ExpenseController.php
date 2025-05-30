@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use Carbon\Carbon;
+use App\Models\User;
 use App\Models\Expense;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 
 class ExpenseController extends Controller
@@ -30,9 +32,19 @@ class ExpenseController extends Controller
 
         $expenses = $query->orderBy('expense_date', 'desc')
                          ->orderBy('created_at', 'desc')
-                         ->paginate($request->per_page ?? 15);
-                         
-        return response()->json($expenses);
+                         ->paginate(15);
+        
+        // Get all users for the filter (admin only)
+        $users = [];
+        if (Auth::user()->role === 'admin') {
+            $users = User::all();
+        }
+        
+        if ($request->expectsJson()) {
+            return response()->json($expenses);
+        }
+        
+        return view('expenses.index', compact('expenses', 'users'));
     }
 
     public function store(Request $request)
@@ -44,7 +56,11 @@ class ExpenseController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            return back()->withErrors($validator)->withInput();
         }
 
         $expense = Expense::create([
@@ -54,16 +70,25 @@ class ExpenseController extends Controller
             'user_id' => $request->user()->id,
         ]);
 
-        return response()->json([
-            'message' => 'Expense recorded successfully',
-            'expense' => $expense->load('user')
-        ], 201);
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Expense recorded successfully',
+                'expense' => $expense->load('user')
+            ], 201);
+        }
+        
+        return redirect()->route('expenses.index')->with('success', 'Pengeluaran berhasil ditambahkan');
     }
 
-    public function show(Expense $expense)
+    public function show(Request $request, Expense $expense)
     {
         $expense->load('user');
-        return response()->json(['expense' => $expense]);
+        
+        if ($request->expectsJson()) {
+            return response()->json(['expense' => $expense]);
+        }
+        
+        return view('expenses.show', compact('expense'));
     }
 
     public function update(Request $request, Expense $expense)
@@ -75,21 +100,34 @@ class ExpenseController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            return back()->withErrors($validator)->withInput();
         }
 
         $expense->update($request->only(['description', 'amount', 'expense_date']));
 
-        return response()->json([
-            'message' => 'Expense updated successfully',
-            'expense' => $expense->fresh('user')
-        ]);
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Expense updated successfully',
+                'expense' => $expense->fresh('user')
+            ]);
+        }
+        
+        return redirect()->route('expenses.index')->with('success', 'Pengeluaran berhasil diperbarui');
     }
 
-    public function destroy(Expense $expense)
+    public function destroy(Request $request, Expense $expense)
     {
         $expense->delete();
-        return response()->json(['message' => 'Expense deleted successfully']);
+        
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Expense deleted successfully']);
+        }
+        
+        return redirect()->route('expenses.index')->with('success', 'Pengeluaran berhasil dihapus');
     }
 
     // Daily expense summary (for dashboard)
@@ -103,10 +141,14 @@ class ExpenseController extends Controller
         $expenseCount = Expense::whereDate('expense_date', $date)
                               ->count();
         
-        return response()->json([
-            'date' => $date->toDateString(),
-            'expense' => $dailyExpense,
-            'expense_count' => $expenseCount
-        ]);
+        if ($request->expectsJson()) {
+            return response()->json([
+                'date' => $date->toDateString(),
+                'expense' => $dailyExpense,
+                'expense_count' => $expenseCount
+            ]);
+        }
+        
+        return view('expenses.daily', compact('date', 'dailyExpense', 'expenseCount'));
     }
 }

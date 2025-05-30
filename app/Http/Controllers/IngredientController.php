@@ -8,7 +8,15 @@ use Illuminate\Support\Facades\Validator;
 
 class IngredientController extends Controller
 {
+    // TAMPILAN CRUD
     public function index()
+    {
+        $ingredients = Ingredient::paginate(10);
+        return view('ingredients.index', compact('ingredients'));
+    }
+
+    // ENDPOINT JSON UNTUK AJAX/API
+    public function jsonList()
     {
         $ingredients = Ingredient::all();
         return response()->json(['ingredients' => $ingredients]);
@@ -23,16 +31,26 @@ class IngredientController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            return back()->withErrors($validator)->withInput();
         }
 
         $ingredient = Ingredient::create($request->all());
-        return response()->json(['message' => 'Ingredient created successfully', 'ingredient' => $ingredient], 201);
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Ingredient created successfully', 'ingredient' => $ingredient], 201);
+        }
+        return redirect()->route('ingredients.index')->with('success', 'Bahan berhasil ditambahkan');
     }
 
-    public function show(Ingredient $ingredient)
+    public function show(Request $request, Ingredient $ingredient)
     {
-        return response()->json(['ingredient' => $ingredient]);
+        if ($request->expectsJson()) {
+            return response()->json(['ingredient' => $ingredient]);
+        }
+        return view('ingredients.show', compact('ingredient'));
     }
 
     public function update(Request $request, Ingredient $ingredient)
@@ -44,21 +62,34 @@ class IngredientController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            return back()->withErrors($validator)->withInput();
         }
 
         $ingredient->update($request->all());
-        return response()->json(['message' => 'Ingredient updated successfully', 'ingredient' => $ingredient]);
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Ingredient updated successfully', 'ingredient' => $ingredient]);
+        }
+        return redirect()->route('ingredients.index')->with('success', 'Bahan berhasil diperbarui');
     }
 
-    public function destroy(Ingredient $ingredient)
+    public function destroy(Request $request, Ingredient $ingredient)
     {
-        // Check if there are products associated with this ingredient
         if ($ingredient->products()->count() > 0) {
-            return response()->json(['message' => 'Cannot delete ingredient used in products'], 400);
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Cannot delete ingredient used in products'], 400);
+            }
+            return back()->with('error', 'Tidak dapat menghapus bahan yang digunakan dalam produk');
         }
 
         $ingredient->delete();
-        return response()->json(['message' => 'Ingredient deleted successfully']);
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Ingredient deleted successfully']);
+        }
+        return redirect()->route('ingredients.index')->with('success', 'Bahan berhasil dihapus');
     }
 }

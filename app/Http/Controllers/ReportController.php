@@ -13,6 +13,10 @@ class ReportController extends Controller
     // Report for best-selling products
     public function bestSellingProducts(Request $request)
     {
+        if (!$request->expectsJson() && !$request->ajax()) {
+            return view('reports.best-selling-products');
+        }
+        
         $validator = Validator::make($request->all(), [
             'period' => 'required|string|in:day,week,month,year,custom',
             'start_date' => 'required_if:period,custom|date',
@@ -77,6 +81,10 @@ class ReportController extends Controller
     // Report for busiest hours
     public function busiestHours(Request $request)
     {
+        if (!$request->expectsJson() && !$request->ajax()) {
+            return view('reports.busiest-hours');
+        }
+        
         $validator = Validator::make($request->all(), [
             'period' => 'required|string|in:day,week,month,year,custom',
             'start_date' => 'required_if:period,custom|date',
@@ -147,6 +155,10 @@ class ReportController extends Controller
     // Daily sales report
     public function dailySalesReport(Request $request)
     {
+        if (!$request->expectsJson() && !$request->ajax()) {
+            return view('reports.daily-sales');
+        }
+        
         $validator = Validator::make($request->all(), [
             'date' => 'sometimes|date',
         ]);
@@ -201,6 +213,10 @@ class ReportController extends Controller
     // Daily profit report
     public function dailyProfitReport(Request $request)
     {
+        if (!$request->expectsJson() && !$request->ajax()) {
+            return view('reports.daily-profit');
+        }
+        
         $validator = Validator::make($request->all(), [
             'date' => 'sometimes|date',
         ]);

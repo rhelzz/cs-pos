@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\Category;
 use App\Models\Ingredient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,24 +16,36 @@ class ProductController extends Controller
         $query = Product::with(['category', 'ingredients']);
 
         // Filter by category
-        if ($request->has('category_id')) {
+        if ($request->filled('category_id')) {
             $query->where('category_id', $request->category_id);
         }
 
         // Filter by temperature
-        if ($request->has('temperature')) {
+        if ($request->filled('temperature')) {
             $query->whereHas('category', function ($q) use ($request) {
                 $q->where('temperature', $request->temperature);
             });
         }
 
         // Filter by active status
-        if ($request->has('active')) {
+        if ($request->filled('active')) {
             $query->where('active', $request->boolean('active'));
         }
 
-        $products = $query->get();
-        return response()->json(['products' => $products]);
+        $products = $query->paginate(10);
+        $categories = Category::all();
+        
+        if ($request->expectsJson()) {
+            return response()->json(['products' => $products]);
+        }
+        
+        return view('products.index', compact('products', 'categories'));
+    }
+    
+    public function create()
+    {
+        $categories = Category::all();
+        return view('products.create', compact('categories'));
     }
 
     public function store(Request $request)
@@ -50,7 +63,11 @@ class ProductController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            return back()->withErrors($validator)->withInput();
         }
 
         // Calculate cost price based on ingredients
@@ -70,7 +87,7 @@ class ProductController extends Controller
                 'category_id' => $request->category_id,
                 'stock' => $request->stock,
                 'description' => $request->description,
-                'active' => $request->active ?? true,
+                'active' => $request->filled('active') ? true : false,
             ]);
 
             // Attach ingredients
@@ -81,22 +98,44 @@ class ProductController extends Controller
             }
 
             DB::commit();
-
-            return response()->json([
-                'message' => 'Product created successfully',
-                'product' => $product->load(['category', 'ingredients'])
-            ], 201);
+            
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Product created successfully',
+                    'product' => $product->load(['category', 'ingredients'])
+                ], 201);
+            }
+            
+            return redirect()->route('products.show', $product)->with('success', 'Produk berhasil ditambahkan');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to create product', 'error' => $e->getMessage()], 500);
+            
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Failed to create product', 'error' => $e->getMessage()], 500);
+            }
+            
+            return back()->with('error', 'Gagal menambahkan produk: ' . $e->getMessage())->withInput();
         }
     }
 
-    public function show(Product $product)
+    public function show(Request $request, Product $product)
     {
         $product->load(['category', 'ingredients']);
-        return response()->json(['product' => $product]);
+        
+        if ($request->expectsJson()) {
+            return response()->json(['product' => $product]);
+        }
+        
+        return view('products.show', compact('product'));
+    }
+    
+    public function edit(Product $product)
+    {
+        $product->load('ingredients');
+        $categories = Category::all();
+        
+        return view('products.edit', compact('product', 'categories'));
     }
 
     public function update(Request $request, Product $product)
@@ -114,14 +153,21 @@ class ProductController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            return back()->withErrors($validator)->withInput();
         }
 
         try {
             DB::beginTransaction();
 
             // Update basic product info
-            $product->fill($request->except('ingredients', 'cost_price'));
+            $product->fill($request->except('ingredients', 'cost_price', 'active'));
+            
+            // Handle active status
+            $product->active = $request->filled('active');
 
             // Update ingredients if provided
             if ($request->has('ingredients')) {
@@ -144,26 +190,39 @@ class ProductController extends Controller
 
             $product->save();
             DB::commit();
-
-            return response()->json([
-                'message' => 'Product updated successfully',
-                'product' => $product->fresh(['category', 'ingredients'])
-            ]);
+            
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Product updated successfully',
+                    'product' => $product->fresh(['category', 'ingredients'])
+                ]);
+            }
+            
+            return redirect()->route('products.show', $product)->with('success', 'Produk berhasil diperbarui');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to update product', 'error' => $e->getMessage()], 500);
+            
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Failed to update product', 'error' => $e->getMessage()], 500);
+            }
+            
+            return back()->with('error', 'Gagal memperbarui produk: ' . $e->getMessage())->withInput();
         }
     }
 
-    public function destroy(Product $product)
+    public function destroy(Request $request, Product $product)
     {
         // Check if the product is used in any transactions
         if ($product->transactionItems()->count() > 0) {
-            return response()->json([
-                'message' => 'Cannot delete product that has been used in transactions', 
-                'suggestion' => 'Consider deactivating the product instead'
-            ], 400);
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Cannot delete product that has been used in transactions', 
+                    'suggestion' => 'Consider deactivating the product instead'
+                ], 400);
+            }
+            
+            return back()->with('error', 'Tidak dapat menghapus produk yang telah digunakan dalam transaksi. Nonaktifkan produk sebagai gantinya.');
         }
 
         try {
@@ -176,11 +235,21 @@ class ProductController extends Controller
             $product->delete();
             
             DB::commit();
-            return response()->json(['message' => 'Product deleted successfully']);
+            
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Product deleted successfully']);
+            }
+            
+            return redirect()->route('products.index')->with('success', 'Produk berhasil dihapus');
             
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to delete product', 'error' => $e->getMessage()], 500);
+            
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Failed to delete product', 'error' => $e->getMessage()], 500);
+            }
+            
+            return back()->with('error', 'Gagal menghapus produk: ' . $e->getMessage());
         }
     }
 
@@ -191,16 +260,24 @@ class ProductController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            return back()->withErrors($validator)->withInput();
         }
 
         $product->update([
             'stock' => $request->stock
         ]);
 
-        return response()->json([
-            'message' => 'Product stock updated successfully',
-            'product' => $product
-        ]);
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Product stock updated successfully',
+                'product' => $product
+            ]);
+        }
+        
+        return redirect()->route('products.show', $product)->with('success', 'Stok produk berhasil diperbarui');
     }
 }

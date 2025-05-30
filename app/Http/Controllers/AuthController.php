@@ -10,6 +10,22 @@ use Illuminate\Support\Facades\Validator;
 
 class AuthController extends Controller
 {
+    /**
+     * Show the login form
+     */
+    public function showLoginForm()
+    {
+        return view('auth.login');
+    }
+
+    /**
+     * Show the registration form
+     */
+    public function showRegistrationForm()
+    {
+        return view('auth.register');
+    }
+    
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -95,14 +111,12 @@ class AuthController extends Controller
         return redirect('/');
     }
 
-    public function profile(Request $request)
+    /**
+     * Display user profile
+     */
+    public function profile()
     {
-        $user = $request->user();
-        
-        if ($request->wantsJson()) {
-            return response()->json(['user' => $user]);
-        }
-        
+        $user = Auth::user();
         return view('profile', compact('user'));
     }
 

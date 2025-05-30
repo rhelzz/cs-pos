@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use Carbon\Carbon;
+use App\Models\User;
 use App\Models\Product;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use App\Models\TransactionItem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 
 class TransactionController extends Controller
@@ -37,8 +39,29 @@ class TransactionController extends Controller
             $query->where('payment_method', $request->payment_method);
         }
 
-        $transactions = $query->orderBy('created_at', 'desc')->paginate($request->per_page ?? 15);
-        return response()->json($transactions);
+        $transactions = $query->orderBy('created_at', 'desc')->paginate(15);
+        
+        // If admin, get users for filtering
+        $users = [];
+        if (Auth::user()->role === 'admin') {
+            $users = User::all();
+        }
+        
+        if ($request->expectsJson()) {
+            return response()->json($transactions);
+        }
+        
+        return view('transactions.index', compact('transactions', 'users'));
+    }
+    
+    public function create()
+    {
+        $products = Product::where('active', true)
+            ->where('stock', '>', 0)
+            ->with('category')
+            ->get();
+            
+        return view('transactions.create', compact('products'));
     }
 
     public function store(Request $request)
@@ -53,7 +76,11 @@ class TransactionController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
+            if ($request->expectsJson()) {
+                return response()->json(['errors' => $validator->errors()], 422);
+            }
+            
+            return back()->withErrors($validator)->withInput();
         }
 
         try {
@@ -68,11 +95,15 @@ class TransactionController extends Controller
                 
                 // Check if enough stock is available
                 if ($product->stock < $itemData['quantity']) {
-                    return response()->json([
-                        'message' => 'Insufficient stock for product: ' . $product->name,
-                        'available' => $product->stock,
-                        'requested' => $itemData['quantity']
-                    ], 400);
+                    if ($request->expectsJson()) {
+                        return response()->json([
+                            'message' => 'Insufficient stock for product: ' . $product->name,
+                            'available' => $product->stock,
+                            'requested' => $itemData['quantity']
+                        ], 400);
+                    }
+                    
+                    return back()->with('error', 'Stok tidak mencukupi untuk produk: ' . $product->name . '. Tersedia: ' . $product->stock . ', Diminta: ' . $itemData['quantity'])->withInput();
                 }
 
                 $subtotal = $product->selling_price * $itemData['quantity'];
@@ -91,11 +122,15 @@ class TransactionController extends Controller
 
             // Check if payment amount is sufficient
             if ($request->payment_amount < $totalAmount) {
-                return response()->json([
-                    'message' => 'Insufficient payment amount',
-                    'total' => $totalAmount,
-                    'paid' => $request->payment_amount
-                ], 400);
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Insufficient payment amount',
+                        'total' => $totalAmount,
+                        'paid' => $request->payment_amount
+                    ], 400);
+                }
+                
+                return back()->with('error', 'Jumlah pembayaran tidak mencukupi. Total: Rp ' . number_format($totalAmount, 0, ',', '.') . ', Dibayar: Rp ' . number_format($request->payment_amount, 0, ',', '.'))->withInput();
             }
 
             // Create transaction
@@ -120,22 +155,36 @@ class TransactionController extends Controller
             }
 
             DB::commit();
-
-            return response()->json([
-                'message' => 'Transaction created successfully',
-                'transaction' => $transaction->load(['items.product', 'user'])
-            ], 201);
+            
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Transaction created successfully',
+                    'transaction' => $transaction->load(['items.product', 'user'])
+                ], 201);
+            }
+            
+            return redirect()->route('transactions.show', $transaction)->with('success', 'Transaksi berhasil dibuat');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Failed to create transaction', 'error' => $e->getMessage()], 500);
+            
+            if ($request->expectsJson()) {
+                return response()->json(['message' => 'Failed to create transaction', 'error' => $e->getMessage()], 500);
+            }
+            
+            return back()->with('error', 'Gagal membuat transaksi: ' . $e->getMessage())->withInput();
         }
     }
 
-    public function show(Transaction $transaction)
+    public function show(Request $request, Transaction $transaction)
     {
         $transaction->load(['items.product', 'user']);
-        return response()->json(['transaction' => $transaction]);
+        
+        if ($request->expectsJson()) {
+            return response()->json(['transaction' => $transaction]);
+        }
+        
+        return view('transactions.show', compact('transaction'));
     }
 
     // Get latest transactions (for dashboard)

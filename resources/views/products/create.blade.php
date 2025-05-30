@@ -17,7 +17,7 @@
     
     async init() {
         try {
-            const response = await fetch('{{ route('ingredients.index') }}');
+            const response = await fetch('{{ route('ingredients.json') }}');
             const data = await response.json();
             this.ingredients = data.ingredients;
             this.isLoading = false;

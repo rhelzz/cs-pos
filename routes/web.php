@@ -51,6 +51,7 @@ Route::middleware('auth:sanctum')->group(function () {
         
         // Ingredients
         Route::resource('ingredients', IngredientController::class);
+        Route::get('ingredients-json', [IngredientController::class, 'jsonList'])->name('ingredients.json');
     });
     
     // Admin and Cashier routes
